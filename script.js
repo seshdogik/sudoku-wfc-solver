@@ -1,214 +1,318 @@
-document.addEventListener('DOMContentLoaded', () => {
-    const boardElement = document.getElementById('sudoku-board');
-    const solveBtn = document.getElementById('solve-btn');
-    const solveFastBtn = document.getElementById('solve-fast-btn');
-    const resetBtn = document.getElementById('reset-btn');
+// Předpřipravený příklad pro snadné testování
+const EXAMPLE_PUZZLE = [
+    [5, 3, 0, 0, 7, 0, 0, 0, 0], [6, 0, 0, 1, 9, 5, 0, 0, 0], [0, 9, 8, 0, 0, 0, 0, 6, 0],
+    [8, 0, 0, 0, 6, 0, 0, 0, 3], [4, 0, 0, 8, 0, 3, 0, 0, 1], [7, 0, 0, 0, 2, 0, 0, 0, 6],
+    [0, 6, 0, 0, 0, 0, 2, 8, 0], [0, 0, 0, 4, 1, 9, 0, 0, 5], [0, 0, 0, 0, 8, 0, 0, 7, 9]
+];
 
-    // 0 znamená prázdnou buňku
-    const initialPuzzle = [
-        [5, 3, 0, 0, 7, 0, 0, 0, 0],
-        [6, 0, 0, 1, 9, 5, 0, 0, 0],
-        [0, 9, 8, 0, 0, 0, 0, 6, 0],
-        [8, 0, 0, 0, 6, 0, 0, 0, 3],
-        [4, 0, 0, 8, 0, 3, 0, 0, 1],
-        [7, 0, 0, 0, 2, 0, 0, 0, 6],
-        [0, 6, 0, 0, 0, 0, 2, 8, 0],
-        [0, 0, 0, 4, 1, 9, 0, 0, 5],
-        [0, 0, 0, 0, 8, 0, 0, 7, 9]
-    ];
+class SudokuSolver {
+    constructor() {
+        this.boardElement = document.getElementById('sudoku-board');
+        this.statusElement = document.getElementById('status-message');
+        this.buttons = {
+            step: document.getElementById('solve-step-btn'),
+            fast: document.getElementById('solve-fast-btn'),
+            clear: document.getElementById('clear-btn'),
+            reset: document.getElementById('reset-btn')
+        };
+        
+        // Interní stav aplikace
+        this.wfcGrid = []; // 2D pole, kde každá buňka má pole možností
+        this.domGrid = []; // 2D pole odkazů na HTML buňky
+        this.activeCell = null; // Buňka, kterou uživatel právě upravuje
+        this.isSolving = false;
+        this.solveInterval = null;
+        this.SOLVE_DELAY = 50; // Rychlost animace v ms
 
-    let cells_wfc; // 2D pole, kde každá buňka obsahuje pole možných čísel
-    let intervalId = null;
-
-    function initialize() {
-        cells_wfc = [];
-        for (let i = 0; i < 9; i++) {
-            cells_wfc[i] = [];
-            for (let j = 0; j < 9; j++) {
-                if (initialPuzzle[i][j] !== 0) {
-                    // Předvyplněná buňka má jen jednu možnost
-                    cells_wfc[i][j] = [initialPuzzle[i][j]];
-                } else {
-                    // Prázdná buňka má všechny možnosti
-                    cells_wfc[i][j] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-                }
-            }
-        }
-        // První propagace omezení z předvyplněných čísel
-        for (let i = 0; i < 9; i++) {
-            for (let j = 0; j < 9; j++) {
-                if (cells_wfc[i][j].length === 1) {
-                    propagateConstraints(i, j, cells_wfc[i][j][0]);
-                }
-            }
-        }
-        renderBoard();
-        solveBtn.disabled = false;
-        solveFastBtn.disabled = false;
-        if (intervalId) clearInterval(intervalId);
+        this.init();
     }
 
-    function renderBoard() {
-        boardElement.innerHTML = '';
+    init() {
+        this.createBoard();
+        this.addEventListeners();
+        this.reset(EXAMPLE_PUZZLE); // Načte příklad při spuštění
+    }
+    
+    // Vytvoří 9x9 mřížku v HTML a uloží si reference
+    createBoard() {
+        this.boardElement.innerHTML = '';
         for (let i = 0; i < 9; i++) {
-            const rowClass = `row-${i}`;
+            this.domGrid[i] = [];
             for (let j = 0; j < 9; j++) {
                 const cell = document.createElement('div');
-                cell.classList.add('cell', rowClass);
+                cell.classList.add('cell', `row-${i}`);
                 cell.dataset.row = i;
                 cell.dataset.col = j;
-                
-                if (cells_wfc[i][j].length === 1) {
-                    cell.textContent = cells_wfc[i][j][0];
-                    if (initialPuzzle[i][j] !== 0) {
-                        cell.classList.add('given');
+                this.boardElement.appendChild(cell);
+                this.domGrid[i][j] = cell;
+            }
+        }
+    }
+
+    addEventListeners() {
+        this.boardElement.addEventListener('click', this.handleCellClick.bind(this));
+        document.addEventListener('keydown', this.handleKeyPress.bind(this));
+        
+        this.buttons.step.addEventListener('click', () => this.solve(false));
+        this.buttons.fast.addEventListener('click', () => this.solve(true));
+        this.buttons.clear.addEventListener('click', () => this.reset([]));
+        this.buttons.reset.addEventListener('click', () => this.reset(EXAMPLE_PUZZLE));
+    }
+    
+    // --- FUNKCE PRO INTERAKCI S UŽIVATELEM ---
+    
+    handleCellClick(event) {
+        if (this.isSolving) return;
+        const cell = event.target.closest('.cell');
+        if (this.activeCell) {
+            this.activeCell.classList.remove('active');
+        }
+        if (cell) {
+            this.activeCell = cell;
+            cell.classList.add('active');
+        } else {
+            this.activeCell = null;
+        }
+    }
+    
+    handleKeyPress(event) {
+        if (!this.activeCell || this.isSolving) return;
+        
+        const r = parseInt(this.activeCell.dataset.row);
+        const c = parseInt(this.activeCell.dataset.col);
+        const num = parseInt(event.key);
+        
+        if (num >= 1 && num <= 9) {
+            const initialGrid = this.getGridSnapshot();
+            initialGrid[r][c] = num;
+            this.reset(initialGrid); // Znovu načte a propaguje omezení
+        } else if (event.key === '0' || event.key === 'Backspace' || event.key === 'Delete') {
+            const initialGrid = this.getGridSnapshot();
+            initialGrid[r][c] = 0;
+            this.reset(initialGrid);
+        }
+    }
+    
+    getGridSnapshot() {
+        const grid = Array(9).fill(0).map(() => Array(9).fill(0));
+        for(let r=0; r<9; r++) {
+            for(let c=0; c<9; c++) {
+                if(this.wfcGrid[r][c].isGiven) {
+                    grid[r][c] = this.wfcGrid[r][c].options[0];
+                }
+            }
+        }
+        return grid;
+    }
+
+
+    // --- ZÁKLADNÍ LOGIKA A ŘÍZENÍ STAVU ---
+    
+    reset(initialGrid = []) {
+        clearInterval(this.solveInterval);
+        this.isSolving = false;
+        
+        // 1. Inicializace WFC mřížky
+        this.wfcGrid = [];
+        for (let i = 0; i < 9; i++) {
+            this.wfcGrid[i] = [];
+            for (let j = 0; j < 9; j++) {
+                const value = initialGrid[i]?.[j] || 0;
+                this.wfcGrid[i][j] = {
+                    options: value !== 0 ? [value] : [1, 2, 3, 4, 5, 6, 7, 8, 9],
+                    isGiven: value !== 0
+                };
+            }
+        }
+        
+        // 2. Propagace počátečních omezení
+        for (let r = 0; r < 9; r++) {
+            for (let c = 0; c < 9; c++) {
+                if (this.wfcGrid[r][c].isGiven) {
+                    this.propagate(r, c, this.wfcGrid[r][c].options[0]);
+                }
+            }
+        }
+        
+        this.render();
+        this.updateControls();
+        this.updateStatus("Zadejte čísla nebo spusťte řešení.", "ready");
+    }
+
+    render() {
+        for (let r = 0; r < 9; r++) {
+            for (let c = 0; c < 9; c++) {
+                const cellData = this.wfcGrid[r][c];
+                const cellElement = this.domGrid[r][c];
+                cellElement.innerHTML = '';
+                cellElement.className = 'cell'; // Reset tříd
+                cellElement.classList.add(`row-${Math.floor(r/3)*3}`);
+
+                if (cellData.options.length === 1) {
+                    cellElement.textContent = cellData.options[0];
+                    if (cellData.isGiven) {
+                        cellElement.classList.add('pre-filled');
                     } else {
-                        cell.classList.add('solved');
+                        cellElement.classList.add('solved');
                     }
                 } else {
-                    cell.textContent = '';
+                    const possibilitiesGrid = document.createElement('div');
+                    possibilitiesGrid.className = 'possibilities-grid';
+                    for (let i = 1; i <= 9; i++) {
+                        const possibility = document.createElement('div');
+                        possibility.textContent = cellData.options.includes(i) ? i : '';
+                        possibilitiesGrid.appendChild(possibility);
+                    }
+                    cellElement.appendChild(possibilitiesGrid);
                 }
-                boardElement.appendChild(cell);
             }
         }
     }
     
-    // Najde buňku s nejmenším počtem možností (entropií), ale > 1
-    function findLowestEntropyCell() {
-        let minEntropy = 10;
-        let cellCoords = null;
-        const candidates = [];
+    updateControls() {
+        this.buttons.step.disabled = this.isSolving;
+        this.buttons.fast.disabled = this.isSolving;
+        this.buttons.clear.disabled = this.isSolving;
+        this.buttons.reset.disabled = this.isSolving;
+    }
 
-        for (let i = 0; i < 9; i++) {
-            for (let j = 0; j < 9; j++) {
-                const entropy = cells_wfc[i][j].length;
-                if (entropy > 1 && entropy < minEntropy) {
-                    minEntropy = entropy;
-                    // našli jsme novou nejnižší entropii, resetujeme kandidáty
-                    candidates.length = 0; 
-                    candidates.push({ r: i, c: j });
-                } else if (entropy > 1 && entropy === minEntropy) {
-                    // našli jsme další buňku se stejnou nejnižší entropií
-                    candidates.push({ r: i, c: j });
+    updateStatus(message, type = '') {
+        this.statusElement.textContent = message;
+        this.statusElement.className = 'status';
+        if (type) this.statusElement.classList.add(type);
+    }
+    
+    
+    // --- ALGORITMUS WAVE FUNCTION COLLAPSE ---
+    
+    solve(isFast) {
+        if (this.isSolving) return;
+        this.isSolving = true;
+        this.updateControls();
+        this.updateStatus("Řeším...", "ready");
+        
+        if (isFast) {
+            while (this.solveStep());
+        } else {
+            this.solveInterval = setInterval(() => {
+                if (!this.solveStep()) {
+                    clearInterval(this.solveInterval);
+                }
+            }, this.SOLVE_DELAY);
+        }
+    }
+    
+    solveStep() {
+        const nextCell = this.findLowestEntropyCell();
+        
+        if (!nextCell) {
+            if (this.checkFailure()) {
+                this.updateStatus("Chyba: Sudoku je neřešitelné!", "error");
+            } else {
+                this.updateStatus("Hotovo!", "solved");
+            }
+            this.isSolving = false;
+            this.updateControls();
+            return false; // Konec řešení
+        }
+
+        // Fáze 1: Kolaps
+        const { r, c } = nextCell;
+        const options = this.wfcGrid[r][c].options;
+        const value = options[Math.floor(Math.random() * options.length)];
+        this.wfcGrid[r][c].options = [value];
+        
+        // Fáze 2: Propagace
+        this.propagate(r, c, value);
+        this.render();
+        return true; // Pokračujeme
+    }
+
+    findLowestEntropyCell() {
+        let minEntropy = 10;
+        let candidates = [];
+        
+        for (let r = 0; r < 9; r++) {
+            for (let c = 0; c < 9; c++) {
+                const entropy = this.wfcGrid[r][c].options.length;
+                if (entropy > 1) {
+                    if (entropy < minEntropy) {
+                        minEntropy = entropy;
+                        candidates = [{ r, c }];
+                    } else if (entropy === minEntropy) {
+                        candidates.push({ r, c });
+                    }
                 }
             }
         }
-        // Pokud existují kandidáti, vybereme jednoho náhodně
+        
         if (candidates.length > 0) {
-            const randomIndex = Math.floor(Math.random() * candidates.length);
-            cellCoords = candidates[randomIndex];
+            return candidates[Math.floor(Math.random() * candidates.length)];
         }
-        return cellCoords;
+        return null; // Všechny buňky zkolabovaly
     }
 
-    // "Zkolabuje" buňku na jednu náhodnou hodnotu z jejích možností
-    function collapseCell(r, c) {
-        const options = cells_wfc[r][c];
-        const randomValue = options[Math.floor(Math.random() * options.length)];
-        cells_wfc[r][c] = [randomValue];
-        return randomValue;
-    }
-
-    // Propaguje omezení po zkolabování buňky
-    function propagateConstraints(r, c, value) {
-        const affectedCells = [];
-        // Řádek
-        for (let j = 0; j < 9; j++) {
-            if (j !== c) {
-                if (removeOption(r, j, value)) affectedCells.push({r, c: j});
+    propagate(r, c, value) {
+        // Odebere možnost `value` ze všech "sousedních" buněk
+        const peers = this.getPeers(r, c);
+        for (const peer of peers) {
+            const options = this.wfcGrid[peer.r][peer.c].options;
+            const index = options.indexOf(value);
+            if (index > -1) {
+                options.splice(index, 1);
+                // Pokud zbyde jen jedna možnost, propagujeme dál (rekurzivně)
+                if (options.length === 1) {
+                    this.propagate(peer.r, peer.c, options[0]);
+                }
             }
         }
-        // Sloupec
+    }
+    
+    getPeers(r, c) {
+        const peers = new Set();
+        // Řádek a sloupec
         for (let i = 0; i < 9; i++) {
-            if (i !== r) {
-                if (removeOption(i, c, value)) affectedCells.push({r: i, c});
-            }
+            if (i !== c) peers.add({ r, c: i });
+            if (i !== r) peers.add({ r: i, c });
         }
         // 3x3 box
         const startRow = Math.floor(r / 3) * 3;
         const startCol = Math.floor(c / 3) * 3;
         for (let i = 0; i < 3; i++) {
             for (let j = 0; j < 3; j++) {
-                const newRow = startRow + i;
-                const newCol = startCol + j;
-                if (newRow !== r || newCol !== c) {
-                     if (removeOption(newRow, newCol, value)) affectedCells.push({r: newRow, c: newCol});
+                const peerR = startRow + i;
+                const peerC = startCol + j;
+                if (peerR !== r || peerC !== c) {
+                    peers.add({r: peerR, c: peerC});
                 }
             }
         }
-        return affectedCells;
-    }
-
-    // Pomocná funkce pro odebrání možnosti z buňky
-    function removeOption(r, c, value) {
-        const options = cells_wfc[r][c];
-        const index = options.indexOf(value);
-        if (index > -1) {
-            options.splice(index, 1);
-            // Pokud po odebrání zbývá jen jedna možnost, musíme propagovat dál!
-            if (options.length === 1) {
-                propagateConstraints(r, c, options[0]);
+        // U Setu musíme manuálně přefiltrovat duplikáty, protože objekty se porovnávají referencí
+        const uniquePeers = [];
+        const seen = new Set();
+        for (const peer of peers) {
+            const key = `${peer.r},${peer.c}`;
+            if (!seen.has(key)) {
+                uniquePeers.push(peer);
+                seen.add(key);
             }
-            return true; // Možnost byla odebrána
         }
-        return false; // Možnost nebyla nalezena
-    }
-
-    function highlightCell(r, c, className, duration = 500) {
-        const cellElement = boardElement.querySelector(`[data-row='${r}'][data-col='${c}']`);
-        if(cellElement) {
-            cellElement.classList.add(className);
-            setTimeout(() => cellElement.classList.remove(className), duration);
-        }
+        return uniquePeers;
     }
     
-    function solveStep() {
-        const cellToCollapse = findLowestEntropyCell();
-        if (!cellToCollapse) {
-            console.log("Hotovo!");
-            if (intervalId) clearInterval(intervalId);
-            solveBtn.disabled = true;
-            solveFastBtn.disabled = true;
-            return false; // Konec řešení
-        }
-
-        const { r, c } = cellToCollapse;
-        highlightCell(r, c, 'collapsed');
-        
-        const collapsedValue = collapseCell(r, c);
-        const affected = propagateConstraints(r, c, collapsedValue);
-        
-        affected.forEach(aff => highlightCell(aff.r, aff.c, 'propagated'));
-        
-        setTimeout(renderBoard, 300);
-        return true; // Pokračujeme
-    }
-
-    solveBtn.addEventListener('click', () => {
-        if(intervalId) clearInterval(intervalId);
-        solveBtn.disabled = true; // Zabráníme vícenásobnému klikání
-        intervalId = setInterval(() => {
-            if (!solveStep()) {
-                clearInterval(intervalId);
+    checkFailure() {
+        for (let r = 0; r < 9; r++) {
+            for (let c = 0; c < 9; c++) {
+                if (this.wfcGrid[r][c].options.length === 0) {
+                    return true; // Našli jsme buňku bez možností -> chyba
+                }
             }
-        }, 600); // Rychlost animace
-    });
-    
-    solveFastBtn.addEventListener('click', () => {
-        if(intervalId) clearInterval(intervalId);
-        solveBtn.disabled = true;
-        solveFastBtn.disabled = true;
-        while(findLowestEntropyCell()){
-            const { r, c } = findLowestEntropyCell();
-            const value = collapseCell(r, c);
-            propagateConstraints(r, c, value);
         }
-        renderBoard();
-        console.log("Hotovo (rychle)!");
-    });
+        return false;
+    }
+}
 
-    resetBtn.addEventListener('click', initialize);
-
-    // První inicializace
-    initialize();
+// Spuštění aplikace po načtení stránky
+document.addEventListener('DOMContentLoaded', () => {
+    new SudokuSolver();
 });

@@ -1,100 +1,151 @@
+:root {
+    --board-bg: #fff;
+    --border-light: #d1d5db;
+    --border-medium: #6b7280;
+    --border-dark: #111827;
+    --text-primary: #1f2937;
+    --text-possibility: #9ca3af;
+    --prefilled-text: #1d4ed8;
+    --prefilled-bg: #eff6ff;
+    --solved-text: #166534;
+    --solved-bg: #f0fdf4;
+    --active-border: #2563eb;
+    --status-ready-bg: #e0e7ff;
+    --status-solved-bg: #dcfce7;
+    --status-error-bg: #fee2e2;
+    --btn-primary-bg: #4f46e5;
+    --btn-primary-hover: #4338ca;
+    --btn-secondary-bg: #6b7280;
+    --btn-secondary-hover: #4b5563;
+}
+
 body {
-    font-family: 'Roboto Mono', monospace;
+    font-family: 'Inter', sans-serif;
     display: flex;
-    flex-direction: column;
-    align-items: center;
     justify-content: center;
-    background-color: #f0f2f5;
-    color: #333;
-    margin-top: 2rem;
+    align-items: flex-start;
+    min-height: 100vh;
+    background-color: #f3f4f6;
+    color: var(--text-primary);
+    padding-top: 2rem;
+}
+
+.container {
+    text-align: center;
 }
 
 h1 {
-    color: #1a237e;
+    font-size: 2.25rem;
+    font-weight: 700;
+}
+
+.subtitle {
+    font-family: 'Roboto Mono', monospace;
+    margin-top: -10px;
+    color: var(--border-medium);
 }
 
 #sudoku-board {
     display: grid;
-    grid-template-columns: repeat(9, 50px);
-    grid-template-rows: repeat(9, 50px);
-    border: 3px solid #333;
-    margin: 20px 0;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    grid-template-columns: repeat(9, 1fr);
+    grid-template-rows: repeat(9, 1fr);
+    width: clamp(300px, 90vw, 540px);
+    height: clamp(300px, 90vw, 540px);
+    border: 3px solid var(--border-dark);
+    border-radius: 8px;
+    margin: 20px auto;
+    background-color: var(--board-bg);
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
 }
 
 .cell {
-    width: 50px;
-    height: 50px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--border-light);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
+    font-size: clamp(1rem, 5vw, 2rem);
     font-weight: bold;
     box-sizing: border-box;
-    transition: background-color 0.3s ease;
+    position: relative;
+    cursor: pointer;
+    transition: box-shadow 0.2s ease;
 }
 
-/* Zvýraznění 3x3 boxů */
-.cell:nth-child(3n) {
-    border-right: 2px solid #555;
-}
-.cell:nth-child(9n) {
-    border-right: 3px solid #333;
-}
-.row-3 .cell, .row-6 .cell {
-    border-bottom: 2px solid #555;
-}
-.row-2 .cell:nth-child(9n), .row-5 .cell:nth-child(9n) {
-    border-right: 3px solid #333;
-}
-.row-8 .cell {
-    border-bottom: 3px solid #333;
+.cell.active {
+    box-shadow: inset 0 0 0 3px var(--active-border);
+    z-index: 10;
 }
 
-.given {
-    background-color: #e3f2fd;
-    color: #0d47a1;
+.cell:nth-child(3n) { border-right: 2px solid var(--border-medium); }
+.cell:nth-child(9n) { border-right: none; }
+.row-2 .cell, .row-5 .cell { border-bottom: 2px solid var(--border-medium); }
+
+.pre-filled {
+    color: var(--prefilled-text);
+    background-color: var(--prefilled-bg);
 }
 
 .solved {
-    background-color: #c8e6c9;
-    color: #1b5e20;
+    color: var(--solved-text);
+    background-color: var(--solved-bg);
+    animation: popIn 0.3s ease-out;
 }
 
-.collapsed {
-    background-color: #ffcdd2; /* Barva pro buňku, která právě zkolabovala */
+@keyframes popIn {
+    0% { transform: scale(0.5); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
 }
 
-.propagated {
-    background-color: #fff9c4; /* Barva pro buňky ovlivněné propagací */
+.possibilities-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-items: center;
+    color: var(--text-possibility);
+    font-size: clamp(0.5rem, 2.5vw, 0.9rem);
+    font-family: 'Roboto Mono', monospace;
 }
 
+.status {
+    padding: 12px;
+    border-radius: 6px;
+    margin: 1rem auto;
+    max-width: 540px;
+    font-weight: 500;
+}
+
+.status.ready { background-color: var(--status-ready-bg); }
+.status.solved { background-color: var(--status-solved-bg); color: var(--solved-text); }
+.status.error { background-color: var(--status-error-bg); color: #991b1b; }
 
 .controls {
     margin-top: 20px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
 }
 
 button {
-    font-family: 'Roboto Mono', monospace;
+    font-family: 'Inter', sans-serif;
+    font-weight: bold;
     padding: 10px 20px;
-    font-size: 16px;
+    font-size: 1rem;
     cursor: pointer;
-    border: 2px solid #3d5afe;
-    background-color: #3d5afe;
+    border: none;
     color: white;
-    border-radius: 5px;
-    margin: 0 10px;
-    transition: background-color 0.2s, transform 0.2s;
+    border-radius: 6px;
+    transition: background-color 0.2s, transform 0.1s;
 }
 
-button:hover {
-    background-color: #304ffe;
-    transform: translateY(-2px);
-}
+button:hover { transform: translateY(-2px); }
+button:active { transform: translateY(0); }
+button:disabled { background-color: #9ca3af; cursor: not-allowed; transform: none; }
 
-button:disabled {
-    background-color: #ccc;
-    border-color: #ccc;
-    cursor: not-allowed;
-}
+#solve-step-btn, #solve-fast-btn { background-color: var(--btn-primary-bg); }
+#solve-step-btn:hover, #solve-fast-btn:hover { background-color: var(--btn-primary-hover); }
+
+#clear-btn, #reset-btn { background-color: var(--btn-secondary-bg); }
+#clear-btn:hover, #reset-btn:hover { background-color: var(--btn-secondary-hover); }
